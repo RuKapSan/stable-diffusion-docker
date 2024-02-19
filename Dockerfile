@@ -5,7 +5,6 @@ ARG TORCH_VERSION=2.0.1
 ARG XFORMERS_VERSION=0.0.22
 ARG WEBUI_VERSION=v1.7.0
 ARG DREAMBOOTH_COMMIT=cf086c536b141fc522ff11f6cffc8b7b12da04b9
-ARG KOHYA_VERSION=v22.6.0
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -78,15 +77,6 @@ FROM base as setup
 
 RUN mkdir -p /sd-models
 
-# Add SDXL models and VAE
-# These need to already have been downloaded:
-#   wget https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors
-#   wget https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors
-#   wget https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors
-COPY sd_xl_base_1.0.safetensors /sd-models/sd_xl_base_1.0.safetensors
-COPY sd_xl_refiner_1.0.safetensors /sd-models/sd_xl_refiner_1.0.safetensors
-COPY sdxl_vae.safetensors /sd-models/sdxl_vae.safetensors
-
 # Clone the git repo of the Stable Diffusion Web UI by Automatic1111
 # and set version
 WORKDIR /
@@ -109,35 +99,22 @@ RUN source /venv/bin/activate && \
     python3 -m install-automatic --skip-torch-cuda-test && \
     deactivate
 
-# Cache the Stable Diffusion Models
-# SDXL models result in OOM kills with 8GB system memory, need 30GB+ to cache these
-RUN source /venv/bin/activate && \
-    python3 cache-sd-model.py --no-half-vae --no-half --xformers --use-cpu=all --ckpt /sd-models/sd_xl_base_1.0.safetensors && \
-    python3 cache-sd-model.py --no-half-vae --no-half --xformers --use-cpu=all --ckpt /sd-models/sd_xl_refiner_1.0.safetensors && \
-    deactivate
 
 # Clone the Automatic1111 Extensions
 RUN git clone https://github.com/d8ahazard/sd_dreambooth_extension.git extensions/sd_dreambooth_extension && \
-    git clone --depth=1 https://github.com/deforum-art/sd-webui-deforum.git extensions/deforum && \
     git clone --depth=1 https://github.com/Mikubill/sd-webui-controlnet.git extensions/sd-webui-controlnet && \
     git clone --depth=1 https://github.com/ashleykleynhans/a1111-sd-webui-locon.git extensions/a1111-sd-webui-locon && \
-    git clone --depth=1 https://github.com/Gourieff/sd-webui-reactor.git extensions/sd-webui-reactor && \
     git clone --depth=1 https://github.com/zanllp/sd-webui-infinite-image-browsing.git extensions/infinite-image-browsing && \
     git clone --depth=1 https://github.com/Uminosachi/sd-webui-inpaint-anything.git extensions/inpaint-anything && \
     git clone --depth=1 https://github.com/Bing-su/adetailer.git extensions/adetailer && \
     git clone --depth=1 https://github.com/civitai/sd_civitai_extension.git extensions/sd_civitai_extension && \
     git clone --depth=1 https://github.com/BlafKing/sd-civitai-browser-plus.git extensions/sd-civitai-browser-plus
 
-# Install dependencies for Deforum, ControlNet, ReActor, Infinite Image Browsing,
+# Install dependencies for ControlNet, Infinite Image Browsing,
 # After Detailer, and CivitAI Browser+ extensions
 RUN source /venv/bin/activate && \
-    cd /stable-diffusion-webui/extensions/deforum && \
-    pip3 install -r requirements.txt && \
     cd /stable-diffusion-webui/extensions/sd-webui-controlnet && \
     pip3 install -r requirements.txt && \
-    cd /stable-diffusion-webui/extensions/sd-webui-reactor && \
-    pip3 install -r requirements.txt && \
-    pip3 install onnxruntime-gpu && \
     cd /stable-diffusion-webui/extensions/infinite-image-browsing && \
     pip3 install -r requirements.txt && \
     cd /stable-diffusion-webui/extensions/adetailer && \
@@ -170,56 +147,10 @@ RUN source /venv/bin/activate && \
     pip3 install -r requirements.txt && \
     deactivate
 
-# Add inswapper model for the ReActor extension
-RUN mkdir -p /stable-diffusion-webui/models/insightface && \
-    cd /stable-diffusion-webui/models/insightface && \
-    wget https://github.com/facefusion/facefusion-assets/releases/download/models/inswapper_128.onnx
-
-# Configure ReActor to use the GPU instead of the CPU
-RUN echo "CUDA" > /stable-diffusion-webui/extensions/sd-webui-reactor/last_device.txt
-
 # Fix Tensorboard
 RUN source /venv/bin/activate && \
     pip3 uninstall -y tensorboard tb-nightly && \
     pip3 install tensorboard tensorflow && \
-    pip3 cache purge && \
-    deactivate
-
-# Install Kohya_ss
-RUN git clone https://github.com/bmaltais/kohya_ss.git /kohya_ss
-WORKDIR /kohya_ss
-COPY kohya_ss/requirements* ./
-RUN git checkout ${KOHYA_VERSION} && \
-    python3 -m venv --system-site-packages venv && \
-    source venv/bin/activate && \
-    pip3 install --no-cache-dir torch==${TORCH_VERSION} torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
-    pip3 install --no-cache-dir xformers==${XFORMERS_VERSION} \
-        bitsandbytes==0.41.1 \
-        tensorboard==2.14.1 \
-        tensorflow==2.14.0 \
-        wheel \
-        scipy \
-        tensorrt && \
-    pip3 install -r requirements.txt && \
-    pip3 install . && \
-    pip3 cache purge && \
-    deactivate
-
-# Install ComfyUI
-RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI
-WORKDIR /ComfyUI
-RUN python3 -m venv --system-site-packages venv && \
-    source venv/bin/activate && \
-    pip3 install --no-cache-dir torch==${TORCH_VERSION} torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
-    pip3 install --no-cache-dir xformers==${XFORMERS_VERSION} && \
-    pip3 install -r requirements.txt && \
-    deactivate
-
-# Install ComfyUI Custom Nodes
-RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git custom_nodes/ComfyUI-Manager && \
-    cd custom_nodes/ComfyUI-Manager && \
-    source /ComfyUI/venv/bin/activate && \
-    pip3 install -r requirements.txt && \
     pip3 cache purge && \
     deactivate
 
@@ -263,8 +194,6 @@ COPY a1111/relauncher.py a1111/webui-user.sh a1111/config.json a1111/ui-config.j
 # ADD SDXL styles.csv
 ADD https://raw.githubusercontent.com/Douleb/SDXL-750-Styles-GPT4-/main/styles.csv /stable-diffusion-webui/styles.csv
 
-# Copy ComfyUI Extra Model Paths (to share models with A1111)
-COPY comfyui/extra_model_paths.yaml /ComfyUI/
 
 # Remove existing SSH host keys
 RUN rm -f /etc/ssh/ssh_host_*
@@ -274,15 +203,15 @@ COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/502.html /usr/share/nginx/html/502.html
 COPY nginx/README.md /usr/share/nginx/html/README.md
 
+RUN pip3 install --no-cache-dir huggingface_hub 
+RUN pip3 install -U hf-transfer
+
 WORKDIR /
 
 # Copy the scripts
 COPY --chmod=755 scripts/* ./
 
-# Copy the accelerate configuration
-COPY kohya_ss/accelerate.yaml ./
-
 # Start the container
-ENV TEMPLATE_VERSION=3.12.2
+ENV TEMPLATE_VERSION=3.12.1
 SHELL ["/bin/bash", "--login", "-c"]
 CMD [ "/start.sh" ]

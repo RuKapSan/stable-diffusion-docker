@@ -21,16 +21,6 @@ sync_apps() {
     rsync --remove-source-files -rlptDu /stable-diffusion-webui/ /workspace/stable-diffusion-webui/
     rm -rf /stable-diffusion-webui
 
-    # Sync Kohya_ss to workspace to support Network volumes
-    echo "Syncing Kohya_ss to workspace, please wait..."
-    rsync --remove-source-files -rlptDu /kohya_ss/ /workspace/kohya_ss/
-    rm -rf /kohya_ss
-
-    # Sync ComfyUI to workspace to support Network volumes
-    echo "Syncing ComfyUI to workspace, please wait..."
-    rsync --remove-source-files -rlptDu /ComfyUI/ /workspace/ComfyUI/
-    rm -rf /ComfyUI
-
     # Sync Application Manager to workspace to support Network volumes
     echo "Syncing Application Manager to workspace, please wait..."
     rsync --remove-source-files -rlptDu /app-manager/ /workspace/app-manager/
@@ -42,12 +32,10 @@ sync_apps() {
 fix_venvs() {
     echo "Fixing Stable Diffusion Web UI venv..."
     /fix_venv.sh /venv /workspace/venv
+}
 
-    echo "Fixing Kohya_ss venv..."
-    /fix_venv.sh /kohya_ss/venv /workspace/kohya_ss/venv
-
-    echo "Fixing ComfyUI venv..."
-    /fix_venv.sh /ComfyUI/venv /workspace/ComfyUI/venv
+clone_models() {
+    python3 /download_models.py
 }
 
 link_models() {
@@ -63,13 +51,18 @@ link_models() {
    if [[ ! -L /workspace/stable-diffusion-webui/models/VAE/sdxl_vae.safetensors ]]; then
        ln -s /sd-models/sdxl_vae.safetensors /workspace/stable-diffusion-webui/models/VAE/sdxl_vae.safetensors
    fi
+
+   for file in /sd-models/*; do
+       if [[ -f $file ]]; then
+           ln -s $file /workspace/stable-diffusion-webui/models/$(basename $file)
+       fi
+   done
 }
 
 if [ "$(printf '%s\n' "$EXISTING_VERSION" "$TEMPLATE_VERSION" | sort -V | head -n 1)" = "$EXISTING_VERSION" ]; then
     if [ "$EXISTING_VERSION" != "$TEMPLATE_VERSION" ]; then
         sync_apps
         fix_venvs
-        link_models
 
         # Configure accelerate
         echo "Configuring accelerate..."
@@ -95,23 +88,10 @@ then
     echo "   Stable Diffusion Web UI:"
     echo "   ---------------------------------------------"
     echo "   /start_a1111.sh"
-    echo ""
-    echo "   Kohya_ss"
-    echo "   ---------------------------------------------"
-    echo "   /start_kohya.sh"
-    echo ""
-    echo "   ComfyUI"
-    echo "   ---------------------------------------------"
-    echo "   /start_comfyui.sh"
 else
+    clone_models
+    link_models
     /start_a1111.sh
-    /start_kohya.sh
-    /start_comfyui.sh
-fi
-
-if [ ${ENABLE_TENSORBOARD} ];
-then
-    /start_tensorboard.sh
 fi
 
 echo "All services have been started"

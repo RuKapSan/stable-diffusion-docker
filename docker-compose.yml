@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   stable-diffusion-webui:
-    image: ashleykza/stable-diffusion-webui:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     deploy:
       resources:
         reservations:
@@ -14,11 +16,10 @@ services:
       - /workspace:/workspace
     ports:
       - "3000:3001"
-      - "3010:3011"
-      - "3020:3021"
-      - "6006:6066"
       - "8888:8888"
     environment:
       JUPYTER_PASSWORD: "Jup1t3R!"
       ENABLE_TENSORBOARD: "1"
+      HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+      HF_HUB_ENABLE_HF_TRANSFER: "1"
     restart: unless-stopped
